@@ -1,0 +1,93 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Анализатор белков</title>
+    <link rel="stylesheet" href="{% static 'api/styles.css' %}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/ngl@latest/dist/ngl.js"></script>
+</head>
+<body>
+    <h1>Анализатор белков</h1>
+    <input type="text" id="proteinId" placeholder="Введите ID белка" />
+    <button id="fetchButton">Получить последовательность</button>
+    <pre id="sequence" class="hidden"></pre>
+    <canvas id="aminoAcidChart" class="hidden" width="400" height="200"></canvas>
+    <div id="viewport" style="width: 50vw; height: 45vh;"></div>
+    
+    <script>
+        let chart;
+        let stage;
+
+        document.getElementById('fetchButton').onclick = async () => {
+            const proteinId = document.getElementById('proteinId').value;
+            const response = await fetch(`/api/protein/?id=${proteinId}`);
+            const data = await response.json();
+            const sequenceElement = document.getElementById('sequence');
+            const chartElement = document.getElementById('aminoAcidChart');
+            const ctx = chartElement.getContext('2d');
+
+            if (response.ok) {
+                sequenceElement.textContent = data.sequence;
+
+                const aminoAcidCounts = {};
+                for (const aminoAcid of data.sequence) {
+                    aminoAcidCounts[aminoAcid] = (aminoAcidCounts[aminoAcid] || 0) + 1;
+                }
+
+                const labels = Object.keys(aminoAcidCounts);
+                const counts = Object.values(aminoAcidCounts);
+
+                if (chart) {
+                    chart.destroy();
+                }
+
+                chart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Количество аминокислот',
+                            data: counts,
+                            backgroundColor: 'rgba(76, 175, 80, 0.5)',
+                            borderColor: 'rgba(76, 175, 80, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            y: {
+                                beginAtZero: true
+                            }
+                        }
+                    }
+                });
+
+                if (!stage) {
+                    stage = new NGL.Stage("viewport");
+                } else {
+                    stage.removeAllComponents();
+                }
+
+                const pdbId = data.pdb_id;
+                const pdbData = await fetch(`https://files.rcsb.org/download/${pdbId}.pdb`);
+                if (pdbData.ok) {
+                    const pdbText = await pdbData.text();
+                    stage.loadFile(new Blob([pdbText], { type: 'text/plain' }), { ext: 'pdb' }).then(function (component) {
+                        component.addRepresentation("cartoon");
+                        component.autoView();
+                    });
+                } else {
+                    sequenceElement.textContent = 'Ошибка при загрузке 3D модели.';
+                }
+
+                sequenceElement.classList.remove('hidden');
+                chartElement.classList.remove('hidden');
+            }
+        };
+    </script>
+</body>
+</html>
